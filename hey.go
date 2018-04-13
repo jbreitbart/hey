@@ -16,9 +16,12 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"log"
 	"math"
 	"net/http"
 	gourl "net/url"
@@ -29,7 +32,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rakyll/hey/requester"
+	"github.com/jbreitbart/hey/requester"
 )
 
 const (
@@ -47,6 +50,7 @@ var (
 	contentType = flag.String("T", "text/html", "")
 	authHeader  = flag.String("a", "", "")
 	hostHeader  = flag.String("host", "", "")
+	urlFile     = flag.String("f", "", "")
 
 	output = flag.String("o", "", "")
 
@@ -90,6 +94,7 @@ Options:
   -a  Basic authentication, username:password.
   -x  HTTP Proxy address as host:port.
   -h2 Enable HTTP/2.
+  -f  File containing the URLs
 
   -host	HTTP Host header.
 
@@ -189,31 +194,82 @@ func main() {
 		}
 	}
 
-	req, err := http.NewRequest(method, url, nil)
-	if err != nil {
-		usageAndExit(err.Error())
-	}
-	req.ContentLength = int64(len(bodyAll))
-	if username != "" || password != "" {
-		req.SetBasicAuth(username, password)
-	}
+	reqs := make([]*http.Request, 0)
 
-	// set host header if set
-	if *hostHeader != "" {
-		req.Host = *hostHeader
-	}
+	if *urlFile == "" {
+		req, err := http.NewRequest(method, url, nil)
+		if err != nil {
+			usageAndExit(err.Error())
+		}
+		req.ContentLength = int64(len(bodyAll))
+		if username != "" || password != "" {
+			req.SetBasicAuth(username, password)
+		}
 
-	ua := req.UserAgent()
-	if ua == "" {
-		ua = heyUA
+		// set host header if set
+		if *hostHeader != "" {
+			req.Host = *hostHeader
+		}
+
+		ua := req.UserAgent()
+		if ua == "" {
+			ua = heyUA
+		} else {
+			ua += " " + heyUA
+		}
+		header.Set("User-Agent", ua)
+		req.Header = header
+
+		reqs = append(reqs, req)
 	} else {
-		ua += " " + heyUA
+		file, err := os.Open(*urlFile)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		defer file.Close()
+
+		// Start reading from the file with a reader.
+		reader := bufio.NewReader(file)
+
+		var url string
+		for {
+			url, err = reader.ReadString('\n')
+			if err != nil {
+				break
+			}
+			req, err := http.NewRequest(method, url, nil)
+			if err != nil {
+				usageAndExit(err.Error())
+			}
+			req.ContentLength = int64(len(bodyAll))
+			if username != "" || password != "" {
+				req.SetBasicAuth(username, password)
+			}
+
+			// set host header if set
+			if *hostHeader != "" {
+				req.Host = *hostHeader
+			}
+
+			ua := req.UserAgent()
+			if ua == "" {
+				ua = heyUA
+			} else {
+				ua += " " + heyUA
+			}
+			header.Set("User-Agent", ua)
+			req.Header = header
+
+			reqs = append(reqs, req)
+		}
+
+		if err != io.EOF {
+			log.Fatalln(err)
+		}
 	}
-	header.Set("User-Agent", ua)
-	req.Header = header
 
 	w := &requester.Work{
-		Request:            req,
+		Requests:           reqs,
 		RequestBody:        bodyAll,
 		N:                  num,
 		C:                  conc,

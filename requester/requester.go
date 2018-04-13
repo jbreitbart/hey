@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
@@ -47,8 +48,8 @@ type result struct {
 }
 
 type Work struct {
-	// Request is the request to be made.
-	Request *http.Request
+	// Requests is a list of the request to be made.
+	Requests []*http.Request
 
 	RequestBody []byte
 
@@ -104,6 +105,7 @@ func (b *Work) writer() io.Writer {
 // Run makes all the requests, prints the summary. It blocks until
 // all work is done.
 func (b *Work) Run() {
+	rand.Seed(time.Now().Unix())
 	b.results = make(chan *result, min(b.C*1000, maxResult))
 	b.stopCh = make(chan struct{}, b.C)
 	b.start = time.Now()
@@ -137,7 +139,7 @@ func (b *Work) makeRequest(c *http.Client) {
 	var code int
 	var dnsStart, connStart, resStart, reqStart, delayStart time.Time
 	var dnsDuration, connDuration, resDuration, reqDuration, delayDuration time.Duration
-	req := cloneRequest(b.Request, b.RequestBody)
+	req := cloneRequest(b.Requests[rand.Intn(len(b.Requests))], b.RequestBody)
 	trace := &httptrace.ClientTrace{
 		DNSStart: func(info httptrace.DNSStartInfo) {
 			dnsStart = time.Now()
@@ -219,7 +221,7 @@ func (b *Work) runWorkers() {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
-			ServerName:         b.Request.Host,
+			ServerName:         b.Requests[0].Host,
 		},
 		MaxIdleConnsPerHost: min(b.C, maxIdleConn),
 		DisableCompression:  b.DisableCompression,
