@@ -237,6 +237,7 @@ func main() {
 			if err != nil {
 				break
 			}
+			url = url[:len(url)-1]
 			req, err := http.NewRequest(method, url, nil)
 			if err != nil {
 				usageAndExit(err.Error())
